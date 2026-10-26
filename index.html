@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Read the prompt, seed, models, settings and reference files embedded in ComfyUI and RunningHub videos and images. Runs in your browser; nothing is uploaded.">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,"Segoe UI",sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Clip Recipe</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a production slate — one wide header strip, then a two-column recipe sheet that stacks on phones */
+:root{
+  --bg:#eceef0; --sheet:#f8f9fa; --ink:#17202b; --muted:#5b6672; --rule:#cfd5db;
+  --accent:#0d6b73; --accent-ink:#ffffff; --tape:#e8b23a; --ok:#1f7a3f; --warn:#a4620b;
+  --code:#e3e7eb;
+  --f-display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12171d; --sheet:#1a2129; --ink:#e7ebef; --muted:#9aa6b2; --rule:#2e3842;
+  --accent:#4fb3bb; --accent-ink:#071619; --tape:#e8b23a; --ok:#5cc282; --warn:#e0a24a; --code:#222b35; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12171d; --sheet:#1a2129; --ink:#e7ebef; --muted:#9aa6b2; --rule:#2e3842;
+  --accent:#4fb3bb; --accent-ink:#071619; --tape:#e8b23a; --ok:#5cc282; --warn:#e0a24a; --code:#222b35; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font:700 2.6rem/1 var(--f-display);letter-spacing:.01em;margin:0;text-wrap:balance}
+h1 span{color:var(--accent)}
+.lede{margin:.35rem 0 0;color:var(--muted);max-width:62ch}
+.brand{font:500 .8rem var(--f-mono);color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.drops{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+@media (max-width:720px){.drops{grid-template-columns:1fr}}
+.drop{border:2px dashed var(--rule);border-radius:10px;background:var(--sheet);padding:18px;display:flex;flex-direction:column;gap:6px;justify-content:center;cursor:pointer;transition:border-color .15s,background .15s;min-width:0}
+.drop:hover,.drop:focus-visible,.drop.over{border-color:var(--accent);outline:none}
+.drop strong{font:600 1.25rem var(--f-display);letter-spacing:.02em}
+.drop small{color:var(--muted)}
+.drop input{display:none}
+.privacy{font-size:.82rem;color:var(--muted)}
+.privacy b{color:var(--ink);font-weight:600}
+.tabs{display:flex;flex-wrap:wrap;gap:8px}
+.tab{font:500 .82rem var(--f-mono);border:1px solid var(--rule);background:var(--sheet);color:var(--ink);padding:6px 10px;border-radius:999px;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.tab:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sheet{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+.slate{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border-bottom:1px solid var(--rule);position:relative}
+.slate::before{content:"";position:absolute;inset:0 0 auto 0;height:6px;background:repeating-linear-gradient(-45deg,var(--ink) 0 14px,var(--sheet) 14px 28px);opacity:.85}
+.cell{padding:18px 16px 12px;border-right:1px solid var(--rule);min-width:0}
+.cell:last-child{border-right:0}
+.lbl{font:600 .7rem var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.val{font:600 1.35rem/1.15 var(--f-display);letter-spacing:.01em;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.val.sm{font:500 .95rem/1.3 var(--f-mono)}
+.filehead{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--rule)}
+.filehead .name{font:500 .9rem var(--f-mono);overflow-wrap:anywhere;min-width:0}
+.pill{font:600 .72rem var(--f-mono);letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+.pill.ok{color:var(--ok)} .pill.warn{color:var(--warn)} .pill.ex{color:var(--muted)}
+.cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+@media (max-width:820px){.cols{grid-template-columns:1fr}}
+.col{padding:18px 16px;display:flex;flex-direction:column;gap:22px;min-width:0}
+.col+.col{border-left:1px solid var(--rule)}
+@media (max-width:820px){.col+.col{border-left:0;border-top:1px solid var(--rule)}}
+h2{font:700 1.15rem var(--f-display);letter-spacing:.04em;text-transform:uppercase;margin:0 0 8px;display:flex;align-items:center;gap:8px;justify-content:space-between}
+h2 .ct{font:500 .75rem var(--f-mono);color:var(--muted);letter-spacing:0;text-transform:none}
+.prompt{background:var(--code);border-radius:8px;padding:12px 14px;font:400 .84rem/1.6 var(--f-mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:440px;overflow:auto;margin:0}
+.psrc{font:500 .75rem var(--f-mono);color:var(--muted);margin:10px 0 4px}
+table{width:100%;border-collapse:collapse;font-size:.86rem}
+td,th{text-align:left;padding:6px 8px 6px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font:600 .7rem var(--f-mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+td.k{color:var(--muted);white-space:nowrap;font-family:var(--f-mono);font-size:.8rem}
+td.v{font-family:var(--f-mono);font-size:.82rem;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+td.n{color:var(--muted);font-size:.78rem;overflow-wrap:anywhere}
+.tbl{overflow-x:auto}
+.ref{display:flex;flex-direction:column;gap:2px;padding:8px 0;border-bottom:1px solid var(--rule)}
+.ref .rn{font:500 .82rem var(--f-mono);overflow-wrap:anywhere}
+.ref .rm{font-size:.8rem;color:var(--muted)}
+.ref .hit{color:var(--ok);font-weight:600}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+button.b{font:600 .85rem var(--f-body);background:var(--accent);color:var(--accent-ink);border:0;border-radius:7px;padding:8px 12px;cursor:pointer}
+button.b.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+button.mini{font:600 .72rem var(--f-mono);background:transparent;color:var(--accent);border:1px solid var(--rule);border-radius:6px;padding:3px 8px;cursor:pointer;letter-spacing:.03em}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:400 .75rem var(--f-mono);background:var(--code);border-radius:5px;padding:2px 7px}
+.empty{color:var(--muted);font-size:.86rem}
+.err{padding:18px 16px;color:var(--warn)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--sheet);padding:8px 14px;border-radius:8px;font-size:.85rem;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+footer{color:var(--muted);font-size:.8rem;display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between}
+footer a{color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="brand">Dang Publishing · free tool</div>
+      <h1>Clip <span>Recipe</span></h1>
+      <p class="lede">Drop a video or image straight from ComfyUI or RunningHub and read back how it was made: the prompt, the model and LoRAs, seed and steps, the canvas, and which reference files went in.</p>
+    </div>
+  </header>
+
+  <section class="drops">
+    <label class="drop" id="dropClip" tabindex="0" for="inClip">
+      <strong>Drop clips here</strong>
+      <small>MP4 / MOV / PNG saved by ComfyUI or RunningHub, or a workflow .json. Several at once is fine.</small>
+      <input type="file" id="inClip" multiple accept=".mp4,.mov,.m4v,.png,.json,video/*,image/png,application/json">
+    </label>
+    <label class="drop" id="dropRefs" tabindex="0" for="inRefs">
+      <strong>Check reference images</strong>
+      <small>Drop the images you think you used. RunningHub renames uploads to a fingerprint of the file, so exact copies get matched.</small>
+      <input type="file" id="inRefs" multiple accept="image/*">
+    </label>
+  </section>
+  <p class="privacy"><b>Nothing leaves your computer.</b> Files are read in this browser tab; no upload, no server.</p>
+
+  <nav class="tabs" id="tabs" aria-label="Loaded files"></nav>
+  <main id="out"></main>
+
+  <footer>
+    <span>Works with files that still carry their ComfyUI metadata. Re-exported or re-encoded clips (editing apps, social uploads) lose it.</span>
+    <span>More tools: <a href="https://dangpublishing.github.io/video-compare/" target="_blank" rel="noopener">Clip Compare</a> · <a href="https://dangpublishing.github.io/abc-viewer/" target="_blank" rel="noopener">ABC Score Viewer</a></span>
+  </footer>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const STANDALONE = true; // set true in the GitHub Pages build (enables the .json download button)
+const SAMPLE = {"92":{"inputs":{"filename_prefix":"video/022_001_00010_Breakout_R_1","format":"auto","codec":"auto","video":["130",0],"format.codec":"auto"},"class_type":"SaveVideo","_meta":{"title":"Save Video"}},"115":{"inputs":{"aspect_ratio":"16:9 (Widescreen)","megapixels":1.0,"multiple":32},"class_type":"ResolutionSelector","_meta":{"title":"Resolution Selector (Size)"}},"119":{"inputs":{"vae_name":"minimax_h3_video_vae_int8_convrot.safetensors"},"class_type":"VAELoader","_meta":{"title":"Load VAE"}},"120":{"inputs":{"vae_name":"minimax_h3_audio_vae_fp32.safetensors"},"class_type":"VAELoader","_meta":{"title":"Load VAE"}},"121":{"inputs":{"samples":["125",0],"vae":["120",0]},"class_type":"VAEDecodeAudio","_meta":{"title":"VAE Decode Audio"}},"122":{"inputs":{"samples":["125",0],"vae":["119",0]},"class_type":"VAEDecode","_meta":{"title":"VAE Decode"}},"123":{"inputs":{"sampler_name":"euler"},"class_type":"KSamplerSelect","_meta":{"title":"KSamplerSelect"}},"124":{"inputs":{"scheduler":"simple","steps":8,"denoise":1.0,"model":["143",0]},"class_type":"BasicScheduler","_meta":{"title":"BasicScheduler"}},"125":{"inputs":{"noise":["129",0],"guider":["126",0],"sampler":["123",0],"sigmas":["124",0],"latent_image":["136",1]},"class_type":"SamplerCustomAdvanced","_meta":{"title":"SamplerCustomAdvanced"}},"126":{"inputs":{"model":["143",0],"conditioning":["136",0]},"class_type":"BasicGuider","_meta":{"title":"Basic Guider"}},"127":{"inputs":{"unet_name":"fasth3_omniref_8step_pruned_int8_convrot.safetensors","weight_dtype":"default"},"class_type":"UNETLoader","_meta":{"title":"Load Diffusion Model"}},"128":{"inputs":{"clip_name":"qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors","type":"minimax","device":"default"},"class_type":"CLIPLoader","_meta":{"title":"Load CLIP"}},"129":{"inputs":{"noise_seed":220010},"class_type":"RandomNoise","_meta":{"title":"RandomNoise"}},"130":{"inputs":{"fps":24.0,"bit_depth":8,"color_space":"sRGB","codec":"none","images":["122",0],"audio":["121",0]},"class_type":"CreateVideo","_meta":{"title":"Create Video"}},"131":{"inputs":{"expression":"max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17","values.a":["132",0]},"class_type":"ComfyMathExpression","_meta":{"title":"Math Expression"}},"132":{"inputs":{"value":12.0},"class_type":"PrimitiveFloat","_meta":{"title":"Float (Duration)"}},"136":{"inputs":{"ref_image_size":"match","clip":["128",0],"prompt":["138",0],"width":["115",0],"height":["115",1],"length":["131",1],"vae":["119",0],"audio_vae":["120",0],"ref_images.ref_image_0":["137",0],"ref_images.ref_image_1":["149",0],"ref_images.ref_image_2":["150",0]},"class_type":"MiniMaxH3ReferenceToVideo","_meta":{"title":"MiniMax H3 Reference to Video"}},"137":{"inputs":{"image":"Alien_Before_escape.jpeg"},"class_type":"LoadImage","_meta":{"title":"Picture 1 \u2014 Alien_Before_escape.jpeg"},"is_changed":["6c8871450d6f889f86a01c829abc6324789e9b892f41f26d95e1e361e86823ea"]},"138":{"inputs":{"value":"subject_definitions:\n<Subject 1> is Shade, a slim young woman with short, choppy copper-red hair and heavy bangs, green eyes, a freckled face, and a double grey leather choker with a silver ring; she wears a metallic emerald-green one-shoulder crop top with its single strap over her left shoulder, metallic emerald-green shorts, a long emerald sash knotted at her left hip and hanging to her knee, a worn brown leather belt with a pouch at her left hip, brown leather cuffs on both wrists, and calf-high brown suede boots with fringed tops, from <Picture 2> and <Picture 3>.\n<Subject 2> is the robed alien, a slender alien with pale blue-grey skin, a large bald domed head and big dark almond eyes, wearing a long maroon robe with gold trim over a tan tunic and grey gloves, from <Picture 1>.\n<Subject 3> is the toad shopkeeper, a squat, heavy, toad-like alien with warty grey-green skin, a wide froggy face with bulging eyes and a pot belly, wearing a maroon vest over a cream shirt, from <Picture 1>.\n<Subject 4> is the hoverbike, a gunmetal-grey hover motorcycle with carbon-fibre panels and green racing stripes, twin LED headlights, a hover pod with a glowing blue ring in place of the front wheel, and rear hover pods that blast blue-white thrust jets, parked in front of the porch facing frame left, from <Picture 1>.\n<Subject 5> is the setting in <Picture 1>: the weathered timber porch of GRUBB'S trading post with its corrugated-iron roof, a tall brass birdcage standing on the porch at frame left, and a sunlit dusty desert street.\n\nsummary:\n[reference generation] The target video is a 12-second, multi-cut sci-fi action scene. Shade, locked in a brass birdcage on the porch of an alien trading post, yanks her robed captor into the bars, kicks the cage door open, bowls both aliens over and sprints off the porch to the parked hoverbike.\n\nretention_analysis:\n<Subject 1> (appears in [Shot 1], [Shot 2], [Shot 3], [Shot 4]): fully_preserved - her face, copper-red hair, choker and emerald-green outfit from <Picture 2> and <Picture 3>; her position inside the birdcage comes from <Picture 1>.\n<Subject 2> (appears in [Shot 1], [Shot 3]): fully_preserved - blue-grey domed head, maroon gold-trimmed robe.\n<Subject 3> (appears in [Shot 1], [Shot 3]): fully_preserved - toad-like face, maroon vest, pot belly.\n<Subject 4> (appears in [Shot 1], [Shot 3], [Shot 4]): fully_preserved - the grey-and-green hover motorcycle and its blue thrusters.\n<Subject 5> (appears in all shots): fully_preserved - the porch, the birdcage and the desert street.\n\ndetailed_description:\nThe target video is a gritty, sunlit cinematic sci-fi western with warm dusty light, crisp detail and fast handheld energy.\n[Shot 1] A wide shot matches <Picture 1>. <Subject 1> stands inside the brass birdcage at frame left; <Subject 2> stands beside the cage, leaning in and reaching one gloved hand between the bars toward her, while <Subject 3> watches from frame right and <Subject 4> idles in the foreground on its blue thrusters. <Subject 1> seizes <Subject 2>'s wrist with both hands and yanks him face-first into the bars with a loud clang; he reels back clutching his face.\n[Shot 2] At 00:04.000, the shot cuts to a low medium shot of the cage door. <Subject 1> drives her brown fringed boot into the latch; the latch snaps and the door swings wide.\n[Shot 3] At 00:06.000, the shot cuts back to the wide angle. <Subject 1> bursts out of the cage and shoulder-charges <Subject 2>, who stumbles backward into <Subject 3>; both aliens topple onto the porch boards in a tangle of robe and vest. <Subject 1> leaps from the front edge of the porch and lands in the dust.\n[Shot 4] At 00:09.000, the shot cuts to a low tracking shot at street level. <Subject 1> sprints across the sand toward <Subject 4>, her red hair and green sash flying, and swings her leg over the seat; she grips the handlebars and the rear thrusters flare brighter as the camera keeps moving with her.\n\noverall_soundscape:\nDesert wind and creaking porch timbers, the low hum of the idling hoverbike, a sharp metallic clang as the alien hits the bars, the snap of the latch and the cage door banging open, two heavy bodies thudding onto wooden boards, boots crunching across sand, and the hoverbike's thrusters rising to a whine.\n\nnon_diegetic_music:\nN/A"},"class_type":"PrimitiveStringMultiline","_meta":{"title":"Input Text (Prompt)"}},"141":{"inputs":{"shift_video":12.0,"shift_audio":3.0,"model":["127",0]},"class_type":"MiniMaxH3SigmaShift","_meta":{"title":"ModelSamplingMiniMaxH3"}},"142":{"inputs":{"attention":"comfy kitchen attention","model":["141",0]},"class_type":"ModelAttentionBackend","_meta":{"title":"Model Attention Backend"}},"143":{"inputs":{"selection":"vsa","start_percent":0.0,"end_percent":1.0,"dense_blocks":"","min_tokens":12288,"extra_tokens":256,"sink_conditioning":"exact_kv_and_rows","verbose":false,"model":["142",0],"selection.keep_percent":10.0},"class_type":"BlockSparseAttention","_meta":{"title":"Model Sparse Attention"}},"149":{"inputs":{"image":"Shade3.jpeg"},"class_type":"LoadImage","_meta":{"title":"Picture 2 \u2014 Shade3.jpeg"},"is_changed":["1f2ade286754fa500e32b0b938892e789fcc4323145def0c5796adcc6b9c6b05"]},"150":{"inputs":{"image":"Shade_CU3.jpeg"},"class_type":"LoadImage","_meta":{"title":"Picture 3 \u2014 Shade_CU3.jpeg"},"is_changed":["dc6cfd7e51e2597d81e958f6770fcfd8ca548f3a4ef3f2f2678ce722d099a1d5"]}};
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const files = [];           // {name, size, kind, graph, workflow, error, example}
+let active = -1;
+const knownHashes = new Map(); // sha256 hex -> filename (from the reference drop)
+
+function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('on'),1800)}
+
+/* ---------- MP4 / MOV metadata (moov/udta/meta keys+ilst, plus classic ©cmt items) ---------- */
+async function readBytes(file, start, len){return new Uint8Array(await file.slice(start, start+len).arrayBuffer())}
+const u32 = (b,o) => ((b[o]<<24)>>>0) + (b[o+1]<<16) + (b[o+2]<<8) + b[o+3];
+const fourcc = (b,o) => String.fromCharCode(b[o],b[o+1],b[o+2],b[o+3]);
+async function findMoov(file){
+  let off=0;
+  while(off+8<=file.size){
+    const h=await readBytes(file,off,16);
+    let size=u32(h,0), hdr=8; const type=fourcc(h,4);
+    if(size===1){size=Number((BigInt(u32(h,8))<<32n)+BigInt(u32(h,12)));hdr=16}
+    if(size===0) size=file.size-off;
+    if(size<8) break;
+    if(type==='moov') return await readBytes(file,off,size);
+    off+=size;
+  }
+  return null;
+}
+function parseMp4Video(b){
+  // video track width/height (tkhd), frame count (stsz) and duration (mvhd)
+  const info={}; let mvT=0,mvD=0;
+  function walk(off,end,inVideo){
+    while(off+8<=end){
+      let size=u32(b,off), hdr=8; const type=fourcc(b,off+4);
+      if(size===1){size=u32(b,off+12);hdr=16} if(size===0) size=end-off; if(size<8||off+size>end) break;
+      const body=off+hdr;
+      if(type==='mvhd'){const v=b[body]; if(v===1){mvT=u32(b,body+20);mvD=u32(b,body+28)}else{mvT=u32(b,body+12);mvD=u32(b,body+16)}}
+      if(type==='trak'){ // is it the video track? look for hdlr 'vide'
+        const seg=b.subarray(body,off+size); let isVid=false;
+        for(let i=0;i+12<seg.length;i++){if(seg[i]===0x68&&seg[i+1]===0x64&&seg[i+2]===0x6c&&seg[i+3]===0x72){isVid=fourcc(seg,i+12)==='vide';break}}
+        if(isVid) walk(body,off+size,true);
+      } else if(['mdia','minf','stbl'].includes(type)) walk(body,off+size,inVideo);
+      else if(inVideo&&type==='tkhd'){info.width=u32(b,off+size-8)>>>16;info.height=u32(b,off+size-4)>>>16}
+      else if(inVideo&&type==='stsz'){info.frames=u32(b,body+8)}
+      else if(type==='moov') walk(body,off+size,false);
+      off+=size;
+    }
+  }
+  walk(0,b.length,false);
+  if(mvT) info.seconds=mvD/mvT;
+  if(info.frames&&info.seconds) info.fps=Math.round(info.frames/info.seconds*100)/100;
+  return info;
+}
+function parseMp4Tags(b){
+  const tags={}; const dec=new TextDecoder('utf-8');
+  function walk(off,end,parent){
+    while(off+8<=end){
+      let size=u32(b,off), hdr=8; const type=fourcc(b,off+4);
+      if(size===1){size=u32(b,off+12);hdr=16} if(size===0) size=end-off; if(size<8||off+size>end) break;
+      const body=off+hdr;
+      if(type==='moov'||type==='udta'||type==='trak') walk(body,off+size,type);
+      else if(type==='meta'){
+        let inner=body; if(fourcc(b,inner+4)!=='hdlr') inner+=4; // FullBox in udta, plain in QuickTime
+        const keys=[]; let o=inner;
+        while(o+8<=off+size){const s=u32(b,o),t=fourcc(b,o+4); if(s<8)break;
+          if(t==='keys'){const n=u32(b,o+12);let k=o+16;for(let i=0;i<n;i++){const ks=u32(b,k);keys.push(dec.decode(b.subarray(k+8,k+ks)));k+=ks}}
+          o+=s}
+        o=inner;
+        while(o+8<=off+size){const s=u32(b,o),t=fourcc(b,o+4); if(s<8)break;
+          if(t==='ilst'){let it=o+8;
+            while(it+8<=o+s){const is=u32(b,it); if(is<8)break;
+              const idx=u32(b,it+4); const name=(idx>0&&idx<=keys.length)?keys[idx-1]:fourcc(b,it+4);
+              let d=it+8; while(d+16<=it+is){const ds=u32(b,d); if(ds<16)break; if(fourcc(b,d+4)==='data'){tags[name]=dec.decode(b.subarray(d+16,d+ds));} d+=ds}
+              it+=is}}
+          o+=s}
+      }
+      off+=size;
+    }
+  }
+  walk(0,b.length,'');
+  return tags;
+}
+/* ---------- PNG text chunks ---------- */
+async function inflate(bytes){
+  if(!('DecompressionStream' in window)) return '';
+  const ds=new DecompressionStream('deflate'); const s=new Blob([bytes]).stream().pipeThrough(ds);
+  return new TextDecoder().decode(await new Response(s).arrayBuffer());
+}
+async function parsePngTags(file){
+  const b=new Uint8Array(await file.arrayBuffer()); const tags={};
+  if(b[1]!==0x50||b[2]!==0x4E) return tags;
+  let o=8; const latin=new TextDecoder('latin1'), utf=new TextDecoder('utf-8');
+  while(o+12<=b.length){
+    const len=u32(b,o), type=fourcc(b,o+4), d=b.subarray(o+8,o+8+len);
+    if(type==='tEXt'){const z=d.indexOf(0);tags[latin.decode(d.subarray(0,z))]=latin.decode(d.subarray(z+1))}
+    else if(type==='zTXt'){const z=d.indexOf(0);tags[latin.decode(d.subarray(0,z))]=await inflate(d.subarray(z+2))}
+    else if(type==='iTXt'){const z=d.indexOf(0);const key=latin.decode(d.subarray(0,z));const comp=d[z+1];let p=z+3;
+      p=d.indexOf(0,p)+1; p=d.indexOf(0,p)+1; const txt=d.subarray(p); tags[key]=comp?await inflate(txt):utf.decode(txt)}
+    if(type==='IEND') break; o+=12+len;
+  }
+  return tags;
+}
+/* ---------- normalise whatever we found into {graph (API prompt), workflow (UI)} ---------- */
+function tryJSON(v){if(typeof v!=='string')return v; try{return JSON.parse(v)}catch{return null}}
+function isGraph(o){return o&&typeof o==='object'&&!Array.isArray(o)&&Object.values(o).some(n=>n&&typeof n==='object'&&'class_type' in n)}
+function isWorkflow(o){return o&&typeof o==='object'&&Array.isArray(o.nodes)}
+function collect(tags){
+  let graph=null, workflow=null;
+  const visit=v=>{v=tryJSON(v); if(!v||typeof v!=='object')return;
+    if(isGraph(v)){graph=graph||v;return} if(isWorkflow(v)){workflow=workflow||v;return}
+    for(const k of ['prompt','workflow','comment','Prompt','Workflow']) if(k in v) visit(v[k]);};
+  for(const k of ['prompt','workflow','comment','Prompt','Workflow','parameters']) if(k in tags) visit(tags[k]);
+  if(!graph&&!workflow) for(const v of Object.values(tags)) visit(v);
+  return {graph,workflow};
+}
+async function load(file){
+  const rec={name:file.name,size:file.size,kind:'',graph:null,workflow:null,error:''};
+  try{
+    const ext=file.name.toLowerCase().split('.').pop();
+    let tags={};
+    if(ext==='json'){rec.kind='Workflow file'; const j=tryJSON(await file.text()); tags={prompt:j}}
+    else if(ext==='png'){rec.kind='PNG image'; tags=await parsePngTags(file)}
+    else {rec.kind='Video'; const moov=await findMoov(file); if(moov){tags=parseMp4Tags(moov); rec.video=parseMp4Video(moov)}}
+    Object.assign(rec,collect(tags));
+    if(!rec.graph&&!rec.workflow) rec.error='No ComfyUI workflow found in this file. It may have been re-exported, re-encoded or saved without metadata.';
+  }catch(e){rec.error='Could not read this file: '+e.message}
+  return rec;
+}
+/* ---------- recipe extraction ---------- */
+const MODEL_KEYS={unet_name:'Diffusion model',ckpt_name:'Checkpoint',lora_name:'LoRA',clip_name:'Text encoder',clip_name1:'Text encoder',clip_name2:'Text encoder 2',vae_name:'VAE',upscale_model:'Upscaler',model_name:'Model',upscaler_model:'Latent upscaler',control_net_name:'ControlNet'};
+const SAMPLE_KEYS=['seed','noise_seed','steps','cfg','sampler_name','scheduler','denoise','shift','shift_video','shift_audio','transition_step','lowres_scale','strength_model','attention','selection','selection.keep_percent','selection.tau'];
+const CANVAS_KEYS=['width','height','length','num_frames','frames','batch_size','frame_rate','fps','duration','megapixels','aspect_ratio','ref_image_size'];
+const REF_TYPES={LoadImage:'image',LoadImageMask:'image',LoadAudio:'audio',LoadVideo:'file',VHS_LoadVideo:'video',VHS_LoadAudio:'audio',VHS_LoadAudioUpload:'audio'};
+function recipeFromGraph(g){
+  const r={prompts:[],models:[],sampling:[],canvas:[],refs:[],outputs:[],nodes:{}};
+  const ids=Object.keys(g).sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0));
+  for(const id of ids){const n=g[id]; if(!n||!n.class_type)continue; const c=n.class_type, title=(n._meta&&n._meta.title)||c, inp=n.inputs||{};
+    r.nodes[c]=(r.nodes[c]||0)+1; if(c==='BasicGuider') r.basicGuider=true;
+    for(const [k,v] of Object.entries(inp)){
+      if(Array.isArray(v)) continue; // a link, not a value
+      if(typeof v==='string'&&v.length>=60&&/\s/.test(v)&&!NOT_PROMPT.has(k)&&!/Note$/i.test(c)) r.prompts.push({node:id,title,key:k,text:v});
+      if(MODEL_KEYS[k]&&typeof v==='string'&&v!=='none') r.models.push({role:MODEL_KEYS[k],name:v,extra:k==='lora_name'&&inp.strength_model!=null?'strength '+inp.strength_model:'' ,node:c});
+      if(SAMPLE_KEYS.includes(k)&&(typeof v!=='string'||v.length<60)) r.sampling.push({k,v,node:c});
+      if(CANVAS_KEYS.includes(k)) r.canvas.push({k,v,node:c});
+      if(k==='filename_prefix') r.outputs.push(v);
+    }
+    if(REF_TYPES[c]){const v=inp[REF_TYPES[c]]??inp.image??inp.audio??inp.video??inp.file; if(typeof v==='string') r.refs.push({type:c.includes('Audio')?'Audio':c.includes('Video')?'Video':'Image',name:v,title})}
+  }
+  return r;
+}
+const WIDGET_ORDER={
+  KSampler:['seed','control_after_generate','steps','cfg','sampler_name','scheduler','denoise'],
+  KSamplerAdvanced:['add_noise','noise_seed','control_after_generate','steps','cfg','sampler_name','scheduler','start_at_step','end_at_step','return_with_leftover_noise'],
+  RandomNoise:['noise_seed','control_after_generate'],
+  SelfLiftH3Sampler:['seed','control_after_generate','cfg','transition_step','lowres_scale','rho','w_min','w_max','upscaler_model','highres_tiling','upscaler_unload'],
+  BasicScheduler:['scheduler','steps','denoise'], KSamplerSelect:['sampler_name'], CFGGuider:['cfg'],
+  UNETLoader:['unet_name','weight_dtype'], LoraLoaderModelOnly:['lora_name','strength_model'], VAELoader:['vae_name'], CLIPLoader:['clip_name','type','device'],
+  LoadImage:['image','upload'], CheckpointLoaderSimple:['ckpt_name'], EmptyLatentImage:['width','height','batch_size']
+};
+function recipeFromWorkflow(w){
+  // UI-format fallback: use named widget values when present, otherwise the raw widget list
+  const g={};
+  for(const n of w.nodes||[]){
+    const named=n.widgets_values_named||null; let inputs={};
+    if(named) inputs={...named};
+    else if(Array.isArray(n.widgets_values)){
+      let wn=(n.inputs||[]).filter(i=>i.widget).map(i=>i.widget.name); if(!wn.length&&WIDGET_ORDER[n.type]) wn=WIDGET_ORDER[n.type];
+      n.widgets_values.forEach((v,i)=>{inputs[wn[i]||('widget_'+i)]=v});
+    } else if(n.widgets_values&&typeof n.widgets_values==='object') inputs={...n.widgets_values};
+    g[n.id]={class_type:n.type,inputs,_meta:{title:n.title||n.type}};
+  }
+  return recipeFromGraph(g);
+}
+const NOT_PROMPT=new Set(['image','audio','video','file','expression','filename_prefix','text_note']);
+const HEX=/^([0-9a-f]{64})\.[a-z0-9]+$/i;
+function refNote(name){
+  const m=name.match(HEX);
+  if(m){const hit=knownHashes.get(m[1].toLowerCase()); return hit?`<span class="hit">Match: ${esc(hit)}</span> (exact same file)`:'RunningHub upload, renamed to the file\'s SHA-256 fingerprint. Drop your images in "Check reference images" to identify it.'}
+  const base=name.split(/[\\/]/).pop(); const hit=[...knownHashes.values()].includes(base);
+  return hit?`<span class="hit">A file with this name is loaded.</span> Local ComfyUI keeps original names, so the version can't be proven.`:'Original filename (local ComfyUI run).';
+}
+function first(list,keys){for(const k of keys){const f=list.find(x=>x.k===k); if(f) return f.v} return null}
+function fmt(v){return typeof v==='number'?(Number.isInteger(v)?v:+v.toFixed(4)):v}
+
+/* ---------- render ---------- */
+function renderTabs(){
+  $('#tabs').innerHTML=files.map((f,i)=>`<button class="tab" role="tab" aria-selected="${i===active}" data-i="${i}" title="${esc(f.name)}">${f.example?'Example · ':''}${esc(f.name)}</button>`).join('');
+  $('#tabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>{active=+b.dataset.i;render()});
+}
+function render(){
+  renderTabs(); const f=files[active]; const out=$('#out');
+  if(!f){out.innerHTML='';return}
+  if(f.error){out.innerHTML=`<div class="sheet"><div class="filehead"><span class="name">${esc(f.name)}</span><span class="pill warn">no recipe</span></div><p class="err">${esc(f.error)}</p></div>`;return}
+  const r=f.graph?recipeFromGraph(f.graph):recipeFromWorkflow(f.workflow);
+  const main=r.models.find(m=>m.role==='Diffusion model'||m.role==='Checkpoint');
+  const seed=first(r.sampling,['noise_seed','seed']), steps=first(r.sampling,['steps']), cfg=first(r.sampling,['cfg']);
+  const V=f.video||{};
+  const w=V.width||first(r.canvas,['width']), h=V.height||first(r.canvas,['height']), len=V.frames||first(r.canvas,['length','num_frames','frames']);
+  const fps=V.fps||first(r.canvas,['frame_rate','fps'])||(len?24:null);
+  const dur=V.seconds?V.seconds.toFixed(2)+' s':len&&fps?(len/fps).toFixed(2)+' s':(first(r.canvas,['duration'])?first(r.canvas,['duration'])+' s':'—');
+  const cfgShown=cfg??(r.basicGuider?'1 (guider)':null);
+  const seedBtn=seed!=null?`<button class="mini" data-copy="${encodeURIComponent(String(seed))}" style="margin-top:6px">Copy seed</button>`:'';
+  const cells=[['Model',main?main.name.replace(/\.(safetensors|ckpt|pt|pth|gguf)$/,''):'—','sm'],['Seed',seed??'—'],['Steps',steps??'—'],['CFG',cfgShown??'—'],['Canvas',w&&h?`${w}×${h}`:'—'],['Length',len?`${len} fr · ${dur}`:dur]];
+  const prompts=r.prompts.map(p=>`<div class="psrc">${esc(p.title)} · node ${esc(p.node)}</div><pre class="prompt">${esc(p.text)}</pre><div class="btns" style="margin-top:6px"><button class="mini" data-copy="${encodeURIComponent(p.text)}">Copy prompt</button></div>`).join('')||'<p class="empty">No long text prompt found in this workflow.</p>';
+  const rows=(list)=>list.map(x=>`<tr><td class="k">${esc(x.k)}</td><td class="v">${esc(fmt(x.v))}</td><td class="n">${esc(x.node)}</td></tr>`).join('');
+  const models=r.models.map(m=>`<tr><td class="k">${esc(m.role)}</td><td class="v">${esc(m.name)}${m.extra?` <span class="n">(${esc(m.extra)})</span>`:''}</td></tr>`).join('');
+  const refs=r.refs.map((x,i)=>`<div class="ref"><span class="rn">${esc(x.type)} ${i+1} · ${esc(x.name)}</span><span class="rm">${refNote(x.name)}</span></div>`).join('')||'<p class="empty">No loaded images, audio or video in this workflow.</p>';
+  const nodeChips=Object.entries(r.nodes).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="chip">${esc(k)}${v>1?' ×'+v:''}</span>`).join('');
+  const src=f.graph&&f.workflow?'prompt + workflow':f.graph?'prompt graph':'workflow';
+  out.innerHTML=`<article class="sheet">
+    <div class="filehead"><span class="name">${esc(f.name)}</span><span class="btns">${f.example?'<span class="pill ex">example</span>':''}<span class="pill ok">${esc(f.kind)} · ${src}</span></span></div>
+    <div class="slate">${cells.map(c=>`<div class="cell"><div class="lbl">${c[0]}</div><div class="val ${c[2]||''}">${esc(String(c[1]))}</div>${c[0]==='Seed'?seedBtn:''}</div>`).join('')}</div>
+    <div class="cols">
+      <div class="col">
+        <section><h2>Prompt <span class="ct">${r.prompts.length} text block${r.prompts.length===1?'':'s'}</span></h2>${prompts}</section>
+        <section><h2>Workflow</h2><div class="btns">
+          <button class="b" id="cpWf">Copy workflow JSON</button>
+          ${STANDALONE?'<button class="b ghost" id="dlWf">Save as .json</button>':''}
+        </div><p class="empty" style="margin-top:8px">Paste or load it into ComfyUI to rebuild this graph. Results can still differ between machines.</p></section>
+        <section><h2>Nodes <span class="ct">${Object.values(r.nodes).reduce((a,b)=>a+b,0)} total</span></h2><div class="chips">${nodeChips}</div></section>
+      </div>
+      <div class="col">
+        <section><h2>Models</h2>${models?`<div class="tbl"><table>${models}</table></div>`:'<p class="empty">None found.</p>'}</section>
+        <section><h2>Sampling</h2>${r.sampling.length?`<div class="tbl"><table><tr><th>Setting</th><th>Value</th><th>Node</th></tr>${rows(r.sampling)}</table></div>`:'<p class="empty">None found.</p>'}</section>
+        <section><h2>Canvas</h2>${f.video&&f.video.width?`<p class="empty" style="margin:0 0 6px">Measured from the video: ${V.width}×${V.height}, ${V.frames||'?'} frames, ${V.fps||'?'} fps, ${V.seconds?V.seconds.toFixed(2)+' s':'?'}.</p>`:''}${r.canvas.length?`<div class="tbl"><table><tr><th>Setting</th><th>Value</th><th>Node</th></tr>${rows(r.canvas)}</table></div>`:'<p class="empty">None found.</p>'}</section>
+        <section><h2>References <span class="ct">${r.refs.length}</span></h2>${refs}</section>
+        ${r.outputs.length?`<section><h2>Saved as</h2><div class="chips">${r.outputs.map(o=>`<span class="chip">${esc(o)}</span>`).join('')}</div></section>`:''}
+      </div>
+    </div></article>`;
+  out.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copy(decodeURIComponent(b.dataset.copy),'Prompt copied'));
+  const wfText=()=>JSON.stringify(f.workflow||f.graph,null,1);
+  $('#cpWf').onclick=()=>copy(wfText(),'Workflow JSON copied');
+  const dl=$('#dlWf'); if(dl) dl.onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([wfText()],{type:'application/json'}));a.download=f.name.replace(/\.[^.]+$/,'')+'_workflow.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};
+}
+async function copy(text,msg){
+  try{await navigator.clipboard.writeText(text);toast(msg)}
+  catch{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');toast(msg)}catch{toast('Select the text and copy it manually')}ta.remove()}
+}
+/* ---------- inputs ---------- */
+async function addClips(list){
+  for(const file of list){const rec=await load(file); files.push(rec); active=files.length-1}
+  const ex=files.findIndex(f=>f.example); if(ex>=0&&files.length>1){files.splice(ex,1);active=files.length-1}
+  render();
+}
+async function addRefs(list){
+  let n=0;
+  for(const file of list){const d=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
+    const hex=[...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join(''); knownHashes.set(hex,file.name); n++}
+  toast(`${n} reference image${n===1?'':'s'} fingerprinted`); render();
+}
+function wire(dropId,inputId,fn){
+  const d=$(dropId), i=$(inputId);
+  i.onchange=()=>{fn([...i.files]);i.value=''};
+  d.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();i.click()}});
+  ['dragenter','dragover'].forEach(t=>d.addEventListener(t,e=>{e.preventDefault();d.classList.add('over')}));
+  ['dragleave','drop'].forEach(t=>d.addEventListener(t,e=>{e.preventDefault();d.classList.remove('over')}));
+  d.addEventListener('drop',e=>fn([...e.dataTransfer.files]));
+}
+wire('#dropClip','#inClip',addClips); wire('#dropRefs','#inRefs',addRefs);
+document.addEventListener('dragover',e=>e.preventDefault()); document.addEventListener('drop',e=>e.preventDefault());
+if(SAMPLE){files.push({name:'022_001_00010_Breakout_R_1.mp4',size:0,kind:'Video',graph:SAMPLE,workflow:null,error:'',example:true});active=0}
+render();
+</script>
+
+</body>
+</html>
