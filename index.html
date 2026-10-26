@@ -34,8 +34,8 @@ h1{font:700 2.6rem/1 var(--f-display);letter-spacing:.01em;margin:0;text-wrap:ba
 h1 span{color:var(--accent)}
 .lede{margin:.35rem 0 0;color:var(--muted);max-width:62ch}
 .brand{font:500 .8rem var(--f-mono);color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
-.drops{display:grid;grid-template-columns:2fr 1fr;gap:14px}
-@media (max-width:720px){.drops{grid-template-columns:1fr}}
+.drops{display:grid;grid-template-columns:1fr;gap:14px}
+
 .drop{border:2px dashed var(--rule);border-radius:10px;background:var(--sheet);padding:18px;display:flex;flex-direction:column;gap:6px;justify-content:center;cursor:pointer;transition:border-color .15s,background .15s;min-width:0}
 .drop:hover,.drop:focus-visible,.drop.over{border-color:var(--accent);outline:none}
 .drop strong{font:600 1.25rem var(--f-display);letter-spacing:.02em}
@@ -87,10 +87,19 @@ td.k{color:var(--muted);white-space:nowrap;font-family:var(--f-mono);font-size:.
 td.v{font-family:var(--f-mono);font-size:.82rem;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 td.n{color:var(--muted);font-size:.78rem;overflow-wrap:anywhere}
 .tbl{overflow-x:auto}
-.ref{display:flex;flex-direction:column;gap:2px;padding:8px 0;border-bottom:1px solid var(--rule)}
-.ref .rn{font:500 .82rem var(--f-mono);overflow-wrap:anywhere}
+.ref{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--rule);position:relative}
+.ref.over .refslot{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--code))}
+.refslot{width:96px;aspect-ratio:1;border:2px dashed var(--rule);border-radius:8px;background:var(--code);display:flex;align-items:center;justify-content:center;text-align:center;font:500 .68rem/1.3 var(--f-mono);color:var(--muted);cursor:pointer;overflow:hidden;padding:4px}
+.refslot:hover,.refslot:focus-visible{border-color:var(--accent);outline:none}
+.refslot.yes{border:2px solid var(--ok)} .refslot.no{border:2px solid var(--warn)} .refslot.name{border:2px solid var(--muted)}
+.refslot img{width:100%;height:100%;object-fit:cover;display:block}
+.refinfo{display:flex;flex-direction:column;gap:3px;min-width:0}
+.ref .rn{font:500 .8rem var(--f-mono);overflow-wrap:anywhere}
 .ref .rm{font-size:.8rem;color:var(--muted)}
-.ref .hit{color:var(--ok);font-weight:600}
+.ref .yes{color:var(--ok);font-weight:600} .ref .no{color:var(--warn);font-weight:600}
+.ref .clr{position:absolute;top:6px;left:74px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font:600 14px/22px var(--f-body);cursor:pointer;padding:0}
+.ref .clr:hover,.ref .clr:focus-visible{background:var(--warn);outline:none}
+.refhint{font-size:.8rem;color:var(--muted);margin:0 0 4px}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
 button.b{font:600 .85rem var(--f-body);background:var(--accent);color:var(--accent-ink);border:0;border-radius:7px;padding:8px 12px;cursor:pointer}
 button.b.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
@@ -126,11 +135,6 @@ footer a{color:var(--accent)}
       <div class="thumbs" id="thumbs"></div>
       <input type="file" id="inClip" multiple accept=".mp4,.mov,.m4v,.png,.json,video/*,image/png,application/json">
     </div>
-    <label class="drop" id="dropRefs" tabindex="0" for="inRefs">
-      <strong>Check reference images</strong>
-      <small>Drag in the images you think you used, or click to choose them. RunningHub renames uploads to a fingerprint of the file, so exact copies get matched.</small>
-      <input type="file" id="inRefs" multiple accept="image/*">
-    </label>
   </section>
   <p class="privacy"><b>Nothing leaves your computer.</b> Files are read in this browser tab; no upload, no server.</p>
 
@@ -151,7 +155,6 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const files = [];           // {name, size, kind, graph, workflow, error, example}
 let active = -1; let nextId = 1;
-const knownHashes = new Map(); // sha256 hex -> filename (from the reference drop)
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('on'),1800)}
 
@@ -338,11 +341,23 @@ function recipeFromWorkflow(w){
 }
 const NOT_PROMPT=new Set(['image','audio','video','file','expression','filename_prefix','text_note']);
 const HEX=/^([0-9a-f]{64})\.[a-z0-9]+$/i;
-function refNote(name){
-  const m=name.match(HEX);
-  if(m){const hit=knownHashes.get(m[1].toLowerCase()); return hit?`<span class="hit">Match: ${esc(hit)}</span> (exact same file)`:'RunningHub upload, renamed to the file\'s SHA-256 fingerprint. Drop your images in "Check reference images" to identify it.'}
-  const base=name.split(/[\\/]/).pop(); const hit=[...knownHashes.values()].includes(base);
-  return hit?`<span class="hit">A file with this name is loaded.</span> Local ComfyUI keeps original names, so the version can't be proven.`:'Original filename (local ComfyUI run).';
+function refNote(name,chk){
+  const hashed=HEX.test(name);
+  if(!chk) return hashed?'RunningHub upload, renamed to a fingerprint of the file. Drop your image on the tile to check it.':'Original filename from a local run. Drop your file on the tile to compare.';
+  const yours=`<br><span class="n">Your file: ${esc(chk.name)}</span>`;
+  if(chk.verdict==='yes') return `<span class="yes">✓ Match.</span> This is the exact file the clip used.`+yours;
+  if(chk.verdict==='no') return `<span class="no">✗ Not the same file.</span> It's a different image, or an edited or re-saved copy.`+yours;
+  if(chk.verdict==='name') return `<span class="yes">Same filename.</span> Local runs keep original names, so the exact version can't be proven.`+yours;
+  return `<span class="no">Different filename</span> from the one the workflow loaded.`+yours;
+}
+async function sha256(file){const d=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function checkRef(f,i,ref,file){
+  const hex=await sha256(file); const m=ref.name.match(HEX); const base=ref.name.split(/[\\/]/).pop();
+  const verdict=m?(m[1].toLowerCase()===hex?'yes':'no'):(file.name===base?'name':'diffname');
+  f.refChecks=f.refChecks||{}; const old=f.refChecks[i]; if(old&&old.url) URL.revokeObjectURL(old.url);
+  f.refChecks[i]={name:file.name,verdict,url:file.type.startsWith('image/')?URL.createObjectURL(file):''};
+  toast(verdict==='yes'?'Match: exact same file':verdict==='no'?'Not the same file':'Compared by filename');
+  render();
 }
 function first(list,keys){for(const k of keys){const f=list.find(x=>x.k===k); if(f) return f.v} return null}
 function fmt(v){return typeof v==='number'?(Number.isInteger(v)?v:+v.toFixed(4)):v}
@@ -368,7 +383,7 @@ function renderThumbs(){
   box.querySelectorAll('.thumb').forEach(t=>t.setAttribute('aria-pressed',String(+t.dataset.i===active)));
 }
 function removeFile(i){
-  const f=files[i]; if(f&&f.url) URL.revokeObjectURL(f.url);
+  const f=files[i]; if(f&&f.url) URL.revokeObjectURL(f.url); if(f&&f.refChecks) Object.values(f.refChecks).forEach(c=>c.url&&URL.revokeObjectURL(c.url));
   files.splice(i,1);
   if(active>=files.length) active=files.length-1; else if(active>i) active--;
   render();
@@ -391,7 +406,13 @@ function render(){
   const prompts=r.prompts.map(p=>`<div class="psrc">${esc(p.title)} · node ${esc(p.node)}</div><pre class="prompt">${esc(p.text)}</pre><div class="btns" style="margin-top:6px"><button class="mini" data-copy="${encodeURIComponent(p.text)}">Copy prompt</button></div>`).join('')||'<p class="empty">No long text prompt found in this workflow.</p>';
   const rows=(list)=>list.map(x=>`<tr><td class="k">${esc(x.k)}</td><td class="v">${esc(fmt(x.v))}</td><td class="n">${esc(x.node)}</td></tr>`).join('');
   const models=r.models.map(m=>`<tr><td class="k">${esc(m.role)}</td><td class="v">${esc(m.name)}${m.extra?` <span class="n">(${esc(m.extra)})</span>`:''}</td></tr>`).join('');
-  const refs=r.refs.map((x,i)=>`<div class="ref"><span class="rn">${esc(x.type)} ${i+1} · ${esc(x.name)}</span><span class="rm">${refNote(x.name)}</span></div>`).join('')||'<p class="empty">No loaded images, audio or video in this workflow.</p>';
+  const checks=f.refChecks||{};
+  const refs=r.refs.length?'<p class="refhint">Drop the file you think you used on its tile, or click a tile to choose it.</p>'+r.refs.map((x,i)=>{const c=checks[i];
+    const tile=c?(c.url?`<img src="${c.url}" alt="">`:esc(c.name)):`Drop ${x.type.toLowerCase()}<br>or click`;
+    const acc=x.type==='Audio'?'audio/*':x.type==='Video'?'video/*':'image/*';
+    return `<div class="ref" data-r="${i}"><div class="refslot ${c?c.verdict==='diffname'?'no':c.verdict:''}" tabindex="0" role="button" aria-label="Check ${esc(x.type)} ${i+1}: drop or choose a file">${tile}</div>
+      <div class="refinfo"><span class="rn">${esc(x.type)} ${i+1} · ${esc(x.name)}</span><span class="rm">${refNote(x.name,c)}</span></div>
+      ${c?`<button class="clr" type="button" aria-label="Clear this check">×</button>`:''}<input type="file" hidden accept="${acc}"></div>`}).join(''):'<p class="empty">No loaded images, audio or video in this workflow.</p>';
   const nodeChips=Object.entries(r.nodes).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="chip">${esc(k)}${v>1?' ×'+v:''}</span>`).join('');
   const src=f.graph&&f.workflow?'prompt + workflow':f.graph?'prompt graph':'workflow';
   out.innerHTML=`<article class="sheet">
@@ -415,6 +436,16 @@ function render(){
       </div>
     </div></article>`;
   out.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copy(decodeURIComponent(b.dataset.copy),'Prompt copied'));
+  out.querySelectorAll('.ref[data-r]').forEach(row=>{
+    const i=+row.dataset.r, ref=r.refs[i], inp=row.querySelector('input'), slot=row.querySelector('.refslot');
+    slot.onclick=()=>inp.click();
+    slot.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();inp.click()}};
+    inp.onchange=()=>{if(inp.files[0]) checkRef(f,i,ref,inp.files[0])};
+    ['dragenter','dragover'].forEach(t=>row.addEventListener(t,e=>{e.preventDefault();e.stopPropagation();row.classList.add('over')}));
+    ['dragleave','drop'].forEach(t=>row.addEventListener(t,e=>{e.preventDefault();e.stopPropagation();row.classList.remove('over')}));
+    row.addEventListener('drop',e=>{const file=e.dataTransfer.files[0]; if(file) checkRef(f,i,ref,file)});
+    const clr=row.querySelector('.clr'); if(clr) clr.onclick=()=>{const c=f.refChecks[i]; if(c&&c.url) URL.revokeObjectURL(c.url); delete f.refChecks[i]; render()};
+  });
   const wfText=()=>JSON.stringify(f.workflow||f.graph,null,1);
   $('#cpWf').onclick=()=>copy(wfText(),'Workflow JSON copied');
   const dl=$('#dlWf'); if(dl) dl.onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([wfText()],{type:'application/json'}));a.download=f.name.replace(/\.[^.]+$/,'')+'_workflow.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};
@@ -433,12 +464,6 @@ async function addClips(list){
   const ex=files.findIndex(f=>f.example); if(ex>=0&&files.length>1){files.splice(ex,1);active=files.length-1}
   render();
 }
-async function addRefs(list){
-  let n=0;
-  for(const file of list){const d=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
-    const hex=[...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join(''); knownHashes.set(hex,file.name); n++}
-  toast(`${n} reference image${n===1?'':'s'} fingerprinted`); render();
-}
 function wire(dropId,inputId,fn){
   const d=$(dropId), i=$(inputId);
   i.onchange=()=>{fn([...i.files]);i.value=''};
@@ -448,7 +473,7 @@ function wire(dropId,inputId,fn){
   ['dragleave','drop'].forEach(t=>d.addEventListener(t,e=>{e.preventDefault();d.classList.remove('over')}));
   d.addEventListener('drop',e=>fn([...e.dataTransfer.files]));
 }
-wire('#dropClip','#inClip',addClips); wire('#dropRefs','#inRefs',addRefs);
+wire('#dropClip','#inClip',addClips);
 document.addEventListener('dragover',e=>e.preventDefault()); document.addEventListener('drop',e=>e.preventDefault());
 if(SAMPLE){files.push({id:nextId++,name:'022_001_00010_Breakout_R_1.mp4',size:0,kind:'Video',graph:SAMPLE,workflow:null,error:'',example:true});active=0}
 render();

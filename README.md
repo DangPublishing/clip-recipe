@@ -46,6 +46,10 @@ Everything happens in your browser tab. Files are never uploaded, and there is n
 
 It is a single `index.html` file with no build step. Download it and open it in a browser, or host it anywhere that serves static files (GitHub Pages works).
 
+## License
+
+MIT. See [LICENSE](LICENSE). Free to use, copy and modify, including the example prompt built into the page.
+
 ## More free tools from Dang Publishing
 
 - [Clip Compare](https://dangpublishing.github.io/video-compare/): A/B video comparison with wipe, side-by-side and flip
