@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="description" content="Read the prompt, seed, models, settings and reference files embedded in ComfyUI and RunningHub videos and images. Runs in your browser; nothing is uploaded.">
+<meta name="description" content="Read the recipe embedded in ComfyUI and RunningHub videos and images, plus Content Credentials, AIGC labels, CapCut info and image-generator prompts from other AI tools. Runs in your browser; nothing is uploaded.">
 <style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,"Segoe UI",sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Clip Recipe</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -112,6 +112,15 @@ button.mini{font:600 .72rem var(--f-mono);background:transparent;color:var(--acc
 .toast.on{opacity:1}
 footer{color:var(--muted);font-size:.8rem;display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between}
 footer a{color:var(--accent)}
+.extra{border-top:1px solid var(--rule);padding:18px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:22px 28px}
+.extra section{min-width:0}
+h3{font:600 .72rem var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 4px}
+ol.hist,ul.hist{margin:0;padding-left:1.3em;font-size:.86rem;display:flex;flex-direction:column;gap:4px}
+.hist .n,td .n{color:var(--muted)}
+.note{font-size:.8rem;color:var(--muted);margin:8px 0 0}
+.note a{color:var(--accent)}
+.lead{margin:0;padding:12px 16px;border-bottom:1px solid var(--rule);font-size:.88rem;color:var(--muted)}
+.yes{color:var(--ok);font-weight:600}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -122,7 +131,7 @@ footer a{color:var(--accent)}
     <div>
       <div class="brand">Dang Publishing · free tool</div>
       <h1>Clip <span>Recipe</span></h1>
-      <p class="lede">Drop a video or image straight from ComfyUI or RunningHub and read back how it was made: the prompt, the model and LoRAs, seed and steps, the canvas, and which reference files went in.</p>
+      <p class="lede">Drop a video or image and read back how it was made. ComfyUI and RunningHub files give the full recipe: prompt, models and LoRAs, seed and steps, canvas and reference files. Files from other tools show what they carry: Content Credentials (Grok, Google, OpenAI, Adobe), China’s AIGC label, CapCut export info, and image-generator prompts.</p>
     </div>
   </header>
 
@@ -130,10 +139,10 @@ footer a{color:var(--accent)}
     <div class="drop" id="dropClip" tabindex="0" role="button" aria-label="Add clips: drag files here or press Enter to choose files">
       <div class="drophead">
         <strong id="clipHead">Drag clips here, or click to choose files</strong>
-        <small>MP4 / MOV / PNG saved by ComfyUI or RunningHub, or a workflow .json. Several at once is fine.</small>
+        <small>MP4 / MOV / PNG / JPG / WebP, or a ComfyUI workflow .json. Several at once is fine.</small>
       </div>
       <div class="thumbs" id="thumbs"></div>
-      <input type="file" id="inClip" multiple accept=".mp4,.mov,.m4v,.png,.json,video/*,image/png,application/json">
+      <input type="file" id="inClip" multiple accept=".mp4,.mov,.m4v,.png,.jpg,.jpeg,.webp,.json,video/*,image/png,image/jpeg,image/webp,application/json">
     </div>
   </section>
   <p class="privacy"><b>Nothing leaves your computer.</b> Files are read in this browser tab; no upload, no server.</p>
@@ -141,7 +150,7 @@ footer a{color:var(--accent)}
   <main id="out"></main>
 
   <footer>
-    <span>Works with files that still carry their ComfyUI metadata. Re-exported or re-encoded clips (editing apps, social uploads) lose it.</span>
+    <span>Works with files straight from the tool that made them. Re-exported or re-encoded clips (editing apps, social uploads, some APIs) usually lose their metadata.</span>
     <span>More tools: <a href="https://dangpublishing.github.io/video-compare/" target="_blank" rel="noopener">Clip Compare</a> · <a href="https://dangpublishing.github.io/abc-viewer/" target="_blank" rel="noopener">ABC Score Viewer</a></span>
   </footer>
 </div>
@@ -162,18 +171,23 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('on');
 async function readBytes(file, start, len){return new Uint8Array(await file.slice(start, start+len).arrayBuffer())}
 const u32 = (b,o) => ((b[o]<<24)>>>0) + (b[o+1]<<16) + (b[o+2]<<8) + b[o+3];
 const fourcc = (b,o) => String.fromCharCode(b[o],b[o+1],b[o+2],b[o+3]);
-async function findMoov(file){
-  let off=0;
+async function readTop(file){
+  // walk the top-level boxes: keep moov, plus small side boxes (uuid etc.) where C2PA and XMP live
+  const out={moov:null,boxes:[],edges:[]}; let off=0;
   while(off+8<=file.size){
     const h=await readBytes(file,off,16);
-    let size=u32(h,0), hdr=8; const type=fourcc(h,4);
-    if(size===1){size=Number((BigInt(u32(h,8))<<32n)+BigInt(u32(h,12)));hdr=16}
+    let size=u32(h,0); const type=fourcc(h,4);
+    if(size===1) size=Number((BigInt(u32(h,8))<<32n)+BigInt(u32(h,12)));
     if(size===0) size=file.size-off;
     if(size<8) break;
-    if(type==='moov') return await readBytes(file,off,size);
+    if(type==='moov') out.moov=await readBytes(file,off,size);
+    else if(!['mdat','free','skip','wide'].includes(type)&&size<=32e6) out.boxes.push(await readBytes(file,off,size));
     off+=size;
   }
-  return null;
+  const lat=new TextDecoder('latin1'), E=1<<20;
+  out.edges.push(lat.decode(await readBytes(file,0,Math.min(E,file.size))));
+  if(file.size>E) out.edges.push(lat.decode(await readBytes(file,Math.max(E,file.size-E),E)));
+  return out;
 }
 function parseMp4Video(b){
   // video track width/height (tkhd), frame count (stsz) and duration (mvhd)
@@ -183,7 +197,8 @@ function parseMp4Video(b){
       let size=u32(b,off), hdr=8; const type=fourcc(b,off+4);
       if(size===1){size=u32(b,off+12);hdr=16} if(size===0) size=end-off; if(size<8||off+size>end) break;
       const body=off+hdr;
-      if(type==='mvhd'){const v=b[body]; if(v===1){mvT=u32(b,body+20);mvD=u32(b,body+28)}else{mvT=u32(b,body+12);mvD=u32(b,body+16)}}
+      if(type==='mvhd'){const v=b[body]; let ct; if(v===1){ct=u32(b,body+4)*4294967296+u32(b,body+8);mvT=u32(b,body+20);mvD=u32(b,body+28)}else{ct=u32(b,body+4);mvT=u32(b,body+12);mvD=u32(b,body+16)}
+        if(ct>0){const d=new Date((ct-2082844800)*1000); if(d.getUTCFullYear()>1990) info.created=d.toISOString().replace('T',' ').replace(/\.\d+Z$/,' UTC')}}
       if(type==='trak'){ // is it the video track? look for hdlr 'vide'
         const seg=b.subarray(body,off+size); let isVid=false;
         for(let i=0;i+12<seg.length;i++){if(seg[i]===0x68&&seg[i+1]===0x64&&seg[i+2]===0x6c&&seg[i+3]===0x72){isVid=fourcc(seg,i+12)==='vide';break}}
@@ -262,16 +277,241 @@ function collect(tags){
   if(!graph&&!workflow) for(const v of Object.values(tags)) visit(v);
   return {graph,workflow};
 }
+/* ---------- JPEG / WebP / TIFF (EXIF) ---------- */
+function parseTiff(b){
+  // minimal EXIF reader: IFD0 text tags + Exif IFD UserComment (where AUTOMATIC1111 writes its parameters in JPEGs)
+  const tags={}; if(b.length<8) return tags;
+  const le=b[0]===0x49; const r16=o=>le?b[o]|(b[o+1]<<8):(b[o]<<8)|b[o+1]; const r32=o=>le?((b[o]|(b[o+1]<<8)|(b[o+2]<<16))+(b[o+3]<<24>>>0)):u32(b,o);
+  const NAMES={0x010E:'ImageDescription',0x010F:'Make',0x0110:'Model',0x0131:'Software',0x0132:'DateTime',0x013B:'Artist',0x8298:'Copyright',0x9003:'DateTimeOriginal',0x9286:'UserComment',0x9C9B:'XPTitle',0x9C9C:'XPComment',0x9C9F:'XPSubject'};
+  const lat=new TextDecoder('latin1'), utf=new TextDecoder('utf-8');
+  function ifd(o,depth){
+    if(o<8||o+2>b.length||depth>2) return; const n=r16(o);
+    for(let i=0;i<n;i++){const e=o+2+i*12; if(e+12>b.length) break; const tag=r16(e), type=r16(e+2), cnt=r32(e+4);
+      if(tag===0x8769){ifd(r32(e+8),depth+1);continue}
+      const name=NAMES[tag]; if(!name) continue;
+      const size=type===3?2:type===4?4:1; const len=cnt*size; const at=len<=4?e+8:r32(e+8); if(at+len>b.length) continue;
+      let d=b.subarray(at,at+len), v;
+      if(tag===0x9286){const cs=lat.decode(d.subarray(0,8)).replace(/\0/g,''); const body=d.subarray(8);
+        if(cs==='UNICODE'){const bigEnd=body[0]===0&&body[1]!==0; v=new TextDecoder(bigEnd||(!le&&!(body[1]===0))?'utf-16be':'utf-16le').decode(body)} else v=utf.decode(body)}
+      else if(tag>=0x9C9B&&tag<=0x9C9F) v=new TextDecoder('utf-16le').decode(d);
+      else v=utf.decode(d);
+      v=v.replace(/\0+$/,'').trim(); if(v) tags[name]=v;
+    }
+  }
+  ifd(r32(4),0); return tags;
+}
+function parseJpeg(b){
+  const tags={}, out={tags,xmp:'',jumbf:null}; if(b[0]!==0xFF||b[1]!==0xD8) return out;
+  const lat=new TextDecoder('latin1'), utf=new TextDecoder('utf-8'); const app11={};
+  let o=2;
+  while(o+4<=b.length){
+    if(b[o]!==0xFF){o++;continue} const m=b[o+1]; if(m===0xD9||m===0xDA) break; if(m===0xD8||(m>=0xD0&&m<=0xD7)||m===0x01){o+=2;continue}
+    const len=(b[o+2]<<8)|b[o+3]; const d=b.subarray(o+4,o+2+len);
+    if(m===0xE1){const head=lat.decode(d.subarray(0,40));
+      if(head.startsWith('Exif\0')) Object.assign(tags,parseTiff(d.subarray(6)));
+      else if(head.startsWith('http://ns.adobe.com/xap/1.0/')) out.xmp+=utf.decode(d.subarray(29));}
+    else if(m===0xFE) tags.Comment=utf.decode(d);
+    else if(m===0xEB&&d[0]===0x4A&&d[1]===0x50){const en=(d[2]<<8)|d[3], seq=u32(d,4); (app11[en]=app11[en]||[]).push({seq,d})}
+    o+=2+len;
+  }
+  // JUMBF (C2PA) is split across APP11 segments: the first keeps its box header, later ones repeat it
+  for(const segs of Object.values(app11)){segs.sort((a,b)=>a.seq-b.seq);
+    const parts=segs.map((s,i)=>i===0?s.d.subarray(8):s.d.subarray(16)); const total=parts.reduce((a,p)=>a+p.length,0);
+    const all=new Uint8Array(total); let p=0; for(const x of parts){all.set(x,p);p+=x.length}
+    if(lat.decode(all.subarray(4,8))==='jumb'){out.jumbf=all;break}}
+  return out;
+}
+function parseWebp(b){
+  const out={tags:{},xmp:'',raw:null}; const lat=new TextDecoder('latin1');
+  if(lat.decode(b.subarray(0,4))!=='RIFF'||lat.decode(b.subarray(8,12))!=='WEBP') return out;
+  let o=12;
+  while(o+8<=b.length){const t=lat.decode(b.subarray(o,o+4)), len=b[o+4]|(b[o+5]<<8)|(b[o+6]<<16)|(b[o+7]<<24>>>0); const d=b.subarray(o+8,o+8+len);
+    if(t==='EXIF') Object.assign(out.tags,parseTiff(lat.decode(d.subarray(0,6))==='Exif\0\0'?d.subarray(6):d));
+    else if(t==='XMP ') out.xmp+=new TextDecoder().decode(d);
+    else if(t==='C2PA') out.raw=d;
+    o+=8+len+(len&1);}
+  return out;
+}
+
+/* ---------- Content Credentials (C2PA): JUMBF boxes holding CBOR ---------- */
+const utf8=new TextDecoder('utf-8');
+function cbor(b){
+  let o=0;
+  function arg(ai){if(ai<24)return ai; if(ai===24)return b[o++]; if(ai===25){const v=(b[o]<<8)|b[o+1];o+=2;return v} if(ai===26){const v=u32(b,o);o+=4;return v} if(ai===27){const v=u32(b,o)*4294967296+u32(b,o+4);o+=8;return v} return -1}
+  function rd(){
+    if(o>=b.length) throw new Error('cbor end'); const ib=b[o++], mt=ib>>5, ai=ib&31;
+    if(mt===7){if(ai===20)return false; if(ai===21)return true; if(ai===22||ai===23)return null;
+      if(ai===25){const h=(b[o]<<8)|b[o+1];o+=2;const e=(h>>10)&31,f=h&1023;return (h>>15?-1:1)*(e===0?f*2**-24:e===31?Infinity:(1+f/1024)*2**(e-15))}
+      if(ai===26){const v=new DataView(b.buffer,b.byteOffset+o,4).getFloat32(0);o+=4;return v}
+      if(ai===27){const v=new DataView(b.buffer,b.byteOffset+o,8).getFloat64(0);o+=8;return v} return null}
+    const n=arg(ai);
+    if(mt===0) return n; if(mt===1) return -1-n;
+    if(mt===2){if(n<0){const ch=[];while(b[o]!==0xFF)ch.push(rd());o++;return {bytes:ch.reduce((a,c)=>a+(c.bytes||0),0)}} const d=b.subarray(o,o+n);o+=n;return {bytes:n,data:d}}
+    if(mt===3){if(n<0){let s='';while(b[o]!==0xFF)s+=rd();o++;return s} const s=utf8.decode(b.subarray(o,o+n));o+=n;return s}
+    if(mt===4){const a=[]; if(n<0){while(b[o]!==0xFF)a.push(rd());o++} else for(let i=0;i<n;i++)a.push(rd()); return a}
+    if(mt===5){const m={}; const one=()=>{const k=rd();m[typeof k==='object'?JSON.stringify(k):k]=rd()}; if(n<0){while(b[o]!==0xFF)one();o++} else for(let i=0;i<n;i++)one(); return m}
+    if(mt===6) return rd(); // tag: keep the value
+    return null;
+  }
+  return rd();
+}
+function jumbf(b,off,end){
+  const out=[];
+  while(off+8<=end){
+    let size=u32(b,off), h=8; const t=fourcc(b,off+4);
+    if(size===1){size=u32(b,off+12);h=16} if(size===0) size=end-off; if(size<8||off+size>end) break;
+    const body=off+h;
+    if(t==='jumb'){const node={label:'',kids:[]}; let p=body;
+      if(fourcc(b,p+4)==='jumd'){const ds=u32(b,p), d=p+8, tog=b[d+16];
+        if(tog&2){let z=d+17; while(z<p+ds&&b[z]!==0) z++; node.label=utf8.decode(b.subarray(d+17,z))} p+=ds}
+      node.kids=jumbf(b,p,off+size); out.push(node)}
+    else out.push({box:t,data:b.subarray(body,off+size)});
+    off+=size;
+  }
+  return out;
+}
+function findC2pa(b){
+  // the manifest store is a 'jumb' box whose description box is labelled c2pa: ....jumb....jumd c2pa...
+  for(let i=12;i+8<=b.length;i++){
+    if(b[i]===0x6A&&b[i+1]===0x75&&b[i+2]===0x6D&&b[i+3]===0x64&&b[i+4]===0x63&&b[i+5]===0x32&&b[i+6]===0x70&&b[i+7]===0x61&&fourcc(b,i-8)==='jumb'){
+      const start=i-12, size=u32(b,start); if(size>16&&start+size<=b.length) return b.subarray(start,start+size);
+    }
+  }
+  return null;
+}
+function der(b,o){const tag=b[o]; let len=b[o+1], h=2; if(len&0x80){const n=len&0x7f; len=0; for(let i=0;i<n;i++) len=len*256+b[o+2+i]; h=2+n} return {tag,len,h,start:o+h,end:o+h+len}}
+function derKids(b,o,end){const k=[]; while(o<end){const d=der(b,o); k.push(d); o=d.end} return k}
+function certSubject(c){
+  // X.509: Certificate > TBSCertificate > [version] serial alg issuer validity subject
+  try{const cert=der(c,0), tbs=der(c,cert.start); let kids=derKids(c,tbs.start,tbs.end); if(kids[0].tag===0xA0) kids=kids.slice(1);
+    const subj=kids[4]; const out={};
+    for(const set of derKids(c,subj.start,subj.end)) for(const atv of derKids(c,set.start,set.end)){
+      const [oid,val]=derKids(c,atv.start,atv.end); const id=[...c.subarray(oid.start,oid.end)].join('.');
+      const s=utf8.decode(c.subarray(val.start,val.end)); if(id==='85.4.10') out.O=s; else if(id==='85.4.3') out.CN=s; else if(id==='85.4.11') out.OU=s;}
+    return out}catch{return {}}
+}
+function tstTime(b){
+  // RFC 3161 timestamp token: TSTInfo genTime is a GeneralizedTime (tag 0x18); certificates before 2050 use UTCTime
+  for(let i=0;i+17<b.length;i++) if(b[i]===0x18&&b[i+1]>=15&&b[i+1]<=24){const s=String.fromCharCode(...b.subarray(i+2,i+2+b[i+1])); const m=s.match(/^(\d{4})(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)(?:\.\d+)?Z$/); if(m) return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]} UTC`}
+  return '';
+}
+function agentName(a){if(!a) return ''; if(typeof a==='string') return a; return [a.name,a.version].filter(Boolean).join(' ')}
+const SOURCE_TYPES={trainedAlgorithmicMedia:'AI-generated',compositeWithTrainedAlgorithmicMedia:'Mixes AI-generated and other material',algorithmicMedia:'Computer-generated (not AI)',digitalCapture:'Camera capture',compositeCapture:'Composite of captures',composite:'Composite',digitalArt:'Digital art',virtualRecording:'Screen recording',dataDrivenMedia:'Data-driven media',minorHumanEdits:'Minor human edits',humanEdits:'Human edits',algorithmicallyEnhanced:'Algorithmically enhanced'};
+const srcLabel=u=>{const k=String(u||'').split('/').pop(); return SOURCE_TYPES[k]||k};
+function readC2pa(store){
+  const top=jumbf(store,0,store.length)[0]; if(!top) return null;
+  const manifests=[];
+  for(const m of top.kids.filter(k=>k.kids)){
+    const man={id:m.label,actions:[],ingredients:[],authors:[],title:'',generator:'',signer:{},time:'',assertions:[]};
+    const cb=k=>{const c=(k.kids||[]).find(x=>x.box==='cbor'); try{return c?cbor(c.data):null}catch{return null}};
+    const js=k=>{const c=(k.kids||[]).find(x=>x.box==='json'); try{return c?JSON.parse(utf8.decode(c.data)):null}catch{return null}};
+    for(const part of m.kids.filter(k=>k.kids)){
+      if(part.label==='c2pa.assertions'){
+        for(const a of part.kids.filter(k=>k.kids)){
+          const lab=a.label.replace(/__\d+$/,''); man.assertions.push(lab); const v=cb(a)||js(a);
+          if(!v) continue;
+          if(/^c2pa\.actions/.test(lab)) for(const x of v.actions||[]) man.actions.push({action:String(x.action||'').replace(/^c2pa\./,''),desc:x.description||'',agent:agentName(x.softwareAgent),source:x.digitalSourceType?srcLabel(x.digitalSourceType):'',when:x.when||''});
+          else if(/^c2pa\.ingredient/.test(lab)) man.ingredients.push({rel:v.relationship||'',title:v['dc:title']||v.title||'',format:v['dc:format']||v.format||'',desc:v.description||''});
+          else if(/creative_work|schema\.org\.CreativeWork/.test(lab)) for(const au of [].concat(v.author||[])) au&&au.name&&man.authors.push(au.name);
+        }
+      } else if(/^c2pa\.claim/.test(part.label)){
+        const c=cb(part)||{}; man.title=c['dc:title']||''; man.format=c['dc:format']||''; man.instance=c.instanceID||'';
+        const gi=[].concat(c.claim_generator_info||[]).map(agentName).filter(Boolean); man.generator=gi.join(', ')||c.claim_generator||'';
+      } else if(part.label==='c2pa.signature'){
+        const c=(part.kids||[]).find(x=>x.box==='cbor');
+        if(c){man.time=tstTime(c.data); try{const s=cbor(c.data); const hdrs=[s[1]||{}]; try{if(s[0]&&s[0].data) hdrs.push(cbor(s[0].data)||{})}catch{}
+          for(const hd of hdrs){const ch=hd['33']||hd.x5chain; const first=Array.isArray(ch)?ch[0]:ch; if(first&&first.data){man.signer=certSubject(first.data);break}}}catch{}}
+      }
+    }
+    manifests.push(man);
+  }
+  if(!manifests.length) return null;
+  const active=manifests[manifests.length-1];
+  const allActs=manifests.flatMap(m=>m.actions);
+  const created=allActs.find(a=>a.action==='created'&&a.agent)||allActs.find(a=>a.agent);
+  const byDesc=allActs.map(a=>(a.desc.match(/\bby ([^.]{3,60})\.?$/)||[])[1]).filter(Boolean);
+  const ai=allActs.some(a=>/AI-generated|Mixes AI/.test(a.source));
+  const selfSigned=/self-signed|ephemeral|local use/i.test((active.signer.O||'')+(active.signer.CN||''));
+  active.selfSigned=selfSigned;
+  return {manifests,active,ai,
+    app:(created&&created.agent)||byDesc.find(x=>/generative|AI/i.test(x))||byDesc[0]||active.generator||'',
+    company:(!selfSigned&&active.signer.O)||active.authors[0]||(!/self-signed|ephemeral/i.test(active.signer.CN||'')&&active.signer.CN)||'',
+    time:manifests.map(m=>m.time).filter(Boolean).pop()||''};
+}
+
+/* ---------- other labels: China AIGC (GB 45438-2025), CapCut export info, XMP, image generators ---------- */
+function findAigc(texts){
+  for(const t of texts){ if(!t) continue; const s=t.replace(/&quot;/g,'"');
+    const re=/AIGC["'>\s:=]*?(\{[^{}]{0,2000}\})/g; let m;
+    while((m=re.exec(s))){const j=tryJSON(m[1]); if(j&&typeof j==='object'&&('Label' in j||'ContentProducer' in j||'ProduceID' in j)) return j}}
+  return null;
+}
+const AIGC_LABEL={'1':'AI-generated','2':'Possibly AI-generated','3':'Suspected AI-generated'};
+const CAPCUT_FLAGS={is_use_ai_video_generation:'AI video generation',is_use_ai_image_generation:'AI image generation',is_use_voice_clone:'Voice clone',is_use_vc_sing_clone:'Singing voice clone',is_use_aimusic_bgm:'AI background music',is_use_aimusic_vocal:'AI vocals',is_aimusic_mv:'AI music video',is_ai_lyric:'AI lyrics',is_use_relight:'Relight',is_use_graph_chart:'Chart graphics',is_use_jichuang_mode_in_ai_writer:'AI writer'};
+function findCapcut(tags){
+  for(const [k,v] of Object.entries(tags)){const j=tryJSON(v); if(!j||typeof j!=='object') continue;
+    const d=j.data||j; if(/vicut|capcut|jianying|lv/i.test(String(j.source_type||d.product||''))||'is_use_ai_video_generation' in d) return {key:k,product:d.product||j.source_type||'',os:d.os||'',platform:j.source_platform||'',videoId:d.videoId||'',flags:Object.entries(d).filter(([f])=>/^is_/.test(f)).map(([f,x])=>({f,label:CAPCUT_FLAGS[f]||f.replace(/^is_(use_)?/,'').replace(/_/g,' '),on:String(x)!=='0'&&x!==false&&x!==''}))}}
+  return null;
+}
+function xmpFields(x){
+  if(!x) return [];
+  const want=['xmp:CreatorTool','dc:title','dc:description','dc:creator','xmpMM:DocumentID','xmp:CreateDate','photoshop:Credit','Iptc4xmpExt:DigitalSourceType','tiff:Software','exif:UserComment','plus:DataMining','xmpMM:OriginalDocumentID'];
+  const out=[];
+  for(const k of want){const re=new RegExp(`${k}="([^"]*)"|<${k}>([\\s\\S]*?)</${k}>`); const m=x.match(re); if(m){let v=(m[1]??m[2]??'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(); if(v) out.push({k,v})}}
+  return out;
+}
+function parseA1111(s){
+  const lines=s.split(/\r?\n/); const si=lines.findIndex(l=>/^Steps: *\d+/.test(l)); if(si<0) return null;
+  const head=lines.slice(0,si); const ni=head.findIndex(l=>/^Negative prompt:/.test(l));
+  const prompt=(ni<0?head:head.slice(0,ni)).join('\n').trim(); const negative=ni<0?'':head.slice(ni).join('\n').replace(/^Negative prompt:\s*/,'').trim();
+  const settings=[]; const tail=lines.slice(si).join(', ');
+  const re=/\s*([A-Za-z][\w \-\/]*?):\s*("(?:[^"\\]|\\.)*"|[^,]*)(?:,|$)/g; let m;
+  while((m=re.exec(tail))&&m[0]){settings.push({k:m[1].trim(),v:m[2].trim().replace(/^"|"$/g,'')})}
+  return {prompt,negative,settings};
+}
+function imageGenerator(tags){
+  // well-known text chunks / EXIF fields written by popular image tools
+  const p=tags.parameters, pj=tryJSON(p);
+  if(pj&&typeof pj==='object'&&(pj.Prompt||pj.prompt)) return {app:pj.Version&&/fooocus/i.test(pj.Version)?'Fooocus':'Fooocus-style JSON',prompt:pj.Prompt||pj.prompt||'',negative:pj['Negative Prompt']||pj.negative_prompt||'',settings:Object.entries(pj).filter(([k,v])=>!/prompt/i.test(k)&&typeof v!=='object').map(([k,v])=>({k,v}))};
+  const a=p&&parseA1111(p)||(tags.UserComment&&parseA1111(tags.UserComment));
+  if(a) return {app:/Version: *f/.test(p||tags.UserComment||'')?'Forge / AUTOMATIC1111':'AUTOMATIC1111-style',...a};
+  if(/NovelAI/i.test(tags.Software||'')){const c=tryJSON(tags.Comment)||{}; return {app:'NovelAI',prompt:tags.Description||c.prompt||'',negative:c.uc||'',settings:Object.entries(c).filter(([k,v])=>!['prompt','uc'].includes(k)&&typeof v!=='object').map(([k,v])=>({k,v}))}}
+  const inv=tryJSON(tags.invokeai_metadata);
+  if(inv&&typeof inv==='object') return {app:'InvokeAI',prompt:inv.positive_prompt||'',negative:inv.negative_prompt||'',settings:Object.entries(inv).filter(([k,v])=>!/prompt/.test(k)).map(([k,v])=>({k,v:typeof v==='object'?(v&&v.name)||JSON.stringify(v):v}))};
+  const desc=tags.Description||'';
+  if(/Job ID:/i.test(desc)||/midjourney/i.test(tags.Author||'')||/--(ar|v|stylize|chaos) /.test(desc)){const job=(desc.match(/Job ID:\s*([0-9a-f-]{36})/i)||[])[1]||''; return {app:'Midjourney',prompt:desc.replace(/\s*Job ID:.*$/is,'').trim(),negative:'',settings:job?[{k:'Job ID',v:job}]:[]}}
+  return null;
+}
+const HIDE_TAGS=new Set(['prompt','workflow','Prompt','Workflow','major_brand','minor_version','compatible_brands']);
+
 async function load(file){
-  const rec={name:file.name,size:file.size,kind:'',graph:null,workflow:null,error:''};
+  const rec={name:file.name,size:file.size,kind:'',graph:null,workflow:null,error:'',tags:{},meta:{}};
   try{
     const ext=file.name.toLowerCase().split('.').pop();
-    let tags={};
+    let tags={}, xmp='', scan=[], texts=[];
     if(ext==='json'){rec.kind='Workflow file'; const j=tryJSON(await file.text()); tags={prompt:j}}
-    else if(ext==='png'){rec.kind='PNG image'; tags=await parsePngTags(file)}
-    else {rec.kind='Video'; const moov=await findMoov(file); if(moov){tags=parseMp4Tags(moov); rec.video=parseMp4Video(moov)}}
+    else if(ext==='png'){rec.kind='PNG image'; const b=new Uint8Array(await file.arrayBuffer()); tags=await parsePngTags(file);
+      let o=8; while(o+12<=b.length){const len=u32(b,o),t=fourcc(b,o+4),d=b.subarray(o+8,o+8+len); if(t==='caBX') scan.push(d); else if(t==='eXIf') Object.assign(tags,parseTiff(d)); if(t==='IEND')break; o+=12+len}
+      if(tags['XML:com.adobe.xmp']) xmp=tags['XML:com.adobe.xmp'];}
+    else if(['jpg','jpeg'].includes(ext)||file.type==='image/jpeg'){rec.kind='JPEG image'; const b=new Uint8Array(await file.arrayBuffer()); const j=parseJpeg(b); tags=j.tags; xmp=j.xmp; if(j.jumbf) scan.push(j.jumbf)}
+    else if(ext==='webp'||file.type==='image/webp'){rec.kind='WebP image'; const b=new Uint8Array(await file.arrayBuffer()); const w=parseWebp(b); tags=w.tags; xmp=w.xmp; if(w.raw) scan.push(w.raw)}
+    else {rec.kind='Video'; const top=await readTop(file); if(top.moov){tags=parseMp4Tags(top.moov); rec.video=parseMp4Video(top.moov); texts.push(new TextDecoder('latin1').decode(top.moov))}
+      for(const u of top.boxes){scan.push(u); const s=new TextDecoder('utf-8').decode(u); const xi=s.indexOf('<x:xmpmeta'); if(xi>=0) xmp+=s.slice(xi,s.indexOf('</x:xmpmeta>',xi)+12)}
+      texts.push(...top.edges)}
+    rec.tags=tags;
     Object.assign(rec,collect(tags));
-    if(!rec.graph&&!rec.workflow) rec.error='No ComfyUI workflow found in this file. It may have been re-exported, re-encoded or saved without metadata.';
+    // provenance and other labels
+    for(const b of scan){const store=findC2pa(b); if(store){try{rec.meta.c2pa=readC2pa(store)}catch(e){rec.meta.c2paErr=e.message} if(rec.meta.c2pa) break}}
+    rec.meta.xmp=xmp; rec.meta.xmpFields=xmpFields(xmp);
+    rec.meta.aigc=findAigc([...Object.entries(tags).map(([k,v])=>k+':'+v),xmp,...texts]);
+    rec.meta.capcut=findCapcut(tags);
+    if(!rec.graph&&!rec.workflow) rec.meta.gen=imageGenerator(tags);
+    rec.meta.other=Object.entries(tags).filter(([k,v])=>!HIDE_TAGS.has(k)&&!(rec.meta.capcut&&rec.meta.capcut.key===k)&&!(rec.meta.aigc&&k==='AIGC')&&!(rec.meta.gen&&['parameters','invokeai_metadata'].includes(k))&&!(isGraph(tryJSON(v))||isWorkflow(tryJSON(v))||(tryJSON(v)&&(tryJSON(v).prompt||tryJSON(v).workflow)))).map(([k,v])=>({k,v:String(v)}));
+    const M=rec.meta, found=M.c2pa||M.aigc||M.capcut||M.gen||M.xmpFields.length||M.other.length||(rec.video&&(rec.video.created||rec.video.width));
+    if(!rec.graph&&!rec.workflow){
+      if(found) rec.infoOnly=true;
+      else rec.error='No metadata found in this file. It may have been re-exported, re-encoded or saved without it.';
+    }
   }catch(e){rec.error='Could not read this file: '+e.message}
   return rec;
 }
@@ -391,7 +631,8 @@ function removeFile(i){
 function render(){
   renderThumbs(); const f=files[active]; const out=$('#out');
   if(!f){out.innerHTML='';return}
-  if(f.error){out.innerHTML=`<div class="sheet"><div class="filehead"><span class="name">${esc(f.name)}</span><span class="pill warn">no recipe</span></div><p class="err">${esc(f.error)}</p></div>`;return}
+  if(f.error){out.innerHTML=`<div class="sheet"><div class="filehead"><span class="name">${esc(f.name)}</span><span class="pill warn">no metadata</span></div><p class="err">${esc(f.error)}</p></div>`;return}
+  if(f.infoOnly){out.innerHTML=infoSheet(f); wireCopies(out); return}
   const r=f.graph?recipeFromGraph(f.graph):recipeFromWorkflow(f.workflow);
   const main=r.models.find(m=>m.role==='Diffusion model'||m.role==='Checkpoint');
   const seed=first(r.sampling,['noise_seed','seed']), steps=first(r.sampling,['steps']), cfg=first(r.sampling,['cfg']);
@@ -400,10 +641,10 @@ function render(){
   const fps=V.fps||first(r.canvas,['frame_rate','fps'])||(len?24:null);
   const dur=V.seconds?V.seconds.toFixed(2)+' s':len&&fps?(len/fps).toFixed(2)+' s':(first(r.canvas,['duration'])?first(r.canvas,['duration'])+' s':'—');
   const cfgShown=cfg??(r.basicGuider?'1 (guider)':null);
-  const seedBtn=seed!=null?`<button class="mini" data-copy="${encodeURIComponent(String(seed))}" style="margin-top:6px">Copy seed</button>`:'';
+  const seedBtn=seed!=null?`<button class="mini" data-copy="${encodeURIComponent(String(seed))}" data-msg="Seed copied" style="margin-top:6px">Copy seed</button>`:'';
   const seedCls=String(seed??'').length>10?'sm':'';
   const cells=[['Model',main?main.name.replace(/\.(safetensors|ckpt|pt|pth|gguf)$/,''):'—','sm'],['Seed',seed??'—',seedCls],['Steps',steps??'—'],['CFG',cfgShown??'—'],['Canvas',w&&h?`${w}×${h}`:'—'],['Length',len?`${len} fr · ${dur}`:dur]];
-  const prompts=r.prompts.map(p=>`<div class="psrc">${esc(p.title)} · node ${esc(p.node)}</div><pre class="prompt">${esc(p.text)}</pre><div class="btns" style="margin-top:6px"><button class="mini" data-copy="${encodeURIComponent(p.text)}">Copy prompt</button></div>`).join('')||'<p class="empty">No long text prompt found in this workflow.</p>';
+  const prompts=r.prompts.map(p=>`<div class="psrc">${esc(p.title)} · node ${esc(p.node)}</div><pre class="prompt">${esc(p.text)}</pre><div class="btns" style="margin-top:6px"><button class="mini" data-copy="${encodeURIComponent(p.text)}" data-msg="Prompt copied">Copy prompt</button></div>`).join('')||'<p class="empty">No long text prompt found in this workflow.</p>';
   const rows=(list)=>list.map(x=>`<tr><td class="k">${esc(x.k)}</td><td class="v">${esc(fmt(x.v))}</td><td class="n">${esc(x.node)}</td></tr>`).join('');
   const models=r.models.map(m=>`<tr><td class="k">${esc(m.role)}</td><td class="v">${esc(m.name)}${m.extra?` <span class="n">(${esc(m.extra)})</span>`:''}</td></tr>`).join('');
   const checks=f.refChecks||{};
@@ -434,8 +675,8 @@ function render(){
         <section><h2>References <span class="ct">${r.refs.length}</span></h2>${refs}</section>
         ${r.outputs.length?`<section><h2>Saved as</h2><div class="chips">${r.outputs.map(o=>`<span class="chip">${esc(o)}</span>`).join('')}</div></section>`:''}
       </div>
-    </div></article>`;
-  out.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copy(decodeURIComponent(b.dataset.copy),'Prompt copied'));
+    </div>${(()=>{const m=metaSections(f,true); return m?`<div class="extra">${m}</div>`:''})()}</article>`;
+  wireCopies(out);
   out.querySelectorAll('.ref[data-r]').forEach(row=>{
     const i=+row.dataset.r, ref=r.refs[i], inp=row.querySelector('input'), slot=row.querySelector('.refslot');
     slot.onclick=()=>inp.click();
@@ -449,6 +690,73 @@ function render(){
   const wfText=()=>JSON.stringify(f.workflow||f.graph,null,1);
   $('#cpWf').onclick=()=>copy(wfText(),'Workflow JSON copied');
   const dl=$('#dlWf'); if(dl) dl.onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([wfText()],{type:'application/json'}));a.download=f.name.replace(/\.[^.]+$/,'')+'_workflow.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};
+}
+
+function wireCopies(out){out.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copy(decodeURIComponent(b.dataset.copy),b.dataset.msg||'Copied'))}
+const copyBtn=(text,label,msg)=>`<button class="mini" data-copy="${encodeURIComponent(text)}" data-msg="${esc(msg||'Copied')}">${esc(label)}</button>`;
+const kvTable=rows=>`<div class="tbl"><table>${rows.map(([k,v,extra])=>`<tr><td class="k">${esc(k)}</td><td class="v">${v}${extra||''}</td></tr>`).join('')}</table></div>`;
+function longVal(v){v=String(v); return v.length>240?`${esc(v.slice(0,240))}… <span class="n">(${v.length} characters)</span> ${copyBtn(v,'Copy','Value copied')}`:esc(v)}
+const TAG_NAMES={'©too':'Encoder (©too)','©cmt':'Comment (©cmt)','©nam':'Title (©nam)','©day':'Date (©day)','©ART':'Artist (©ART)','©swr':'Software (©swr)','©des':'Description (©des)',desc:'Description',ldes:'Long description',cprt:'Copyright',covr:'Cover art'};
+const isBinary=(k,v)=>k==='covr'||(v.length>40&&(v.match(/[\u0000-\u0008\u000e-\u001f\ufffd]/g)||[]).length>v.length*0.05);
+function c2paSection(c){
+  const a=c.active, rows=[];
+  if(c.app) rows.push(['Made with',esc(c.app)]);
+  const sig=[a.signer.O,a.signer.CN].filter(x=>x&&!/self-signed|ephemeral/i.test(x));
+  if(a.signer.O||a.signer.CN) rows.push(['Signed by',esc([...new Set(sig)].join(' · ')||'—')+(a.selfSigned?' <span class="n">(self-signed certificate, not issued by a trusted authority)</span>':'')]);
+  if(a.authors.length) rows.push(['Author',esc(a.authors.join(', '))]);
+  rows.push(['AI-generated',c.ai?'<span class="yes">Yes</span>, according to the label':'Not stated in the label']);
+  if(c.time) rows.push(['Time-stamped',esc(c.time)]);
+  if(a.title) rows.push(['Title / ID',esc(a.title)]);
+  if(a.generator&&a.generator!==c.app) rows.push(['Label written by',esc(a.generator)]);
+  const seen=new Set(), hist=[];
+  for(const m of c.manifests) for(const x of m.actions){const key=x.action+'|'+x.desc+'|'+x.agent; if(seen.has(key)) continue; seen.add(key); hist.push(x)}
+  const iseen=new Set(); const ings=c.manifests.flatMap(m=>m.ingredients).filter(i=>{const k=[i.title,i.format,i.rel].join('|'); if(iseen.has(k)||!(i.title||i.format||i.desc||i.rel)) return false; iseen.add(k); return true});
+  const verbs={created:'Created',opened:'Opened',edited:'Edited',resized:'Resized',placed:'Placed',converted:'Converted',cropped:'Cropped',filtered:'Filtered',color_adjustments:'Colour adjusted',published:'Published',transcoded:'Transcoded',watermarked:'Watermarked',removed:'Removed',repackaged:'Repackaged'};
+  return `<section><h2>Content Credentials <span class="ct">C2PA · ${c.manifests.length} manifest${c.manifests.length===1?'':'s'}</span></h2>
+    ${kvTable(rows)}
+    ${hist.length?`<h3>History</h3><ol class="hist">${hist.map(x=>`<li><b>${esc(verbs[x.action]||x.action)}</b>${x.desc?` · ${esc(x.desc)}`:''}${x.agent?` <span class="n">· ${esc(x.agent)}</span>`:''}${x.source?` <span class="n">· ${esc(x.source)}</span>`:''}${x.when?` <span class="n">· ${esc(x.when)}</span>`:''}</li>`).join('')}</ol>`:''}
+    ${ings.length?`<h3>Made from</h3><ul class="hist">${ings.map(i=>`<li>${esc(i.title||i.desc||'An input file')}${i.format?` <span class="n">(${esc(i.format)})</span>`:''}${i.rel?` <span class="n">· ${esc({parentOf:'source file',componentOf:'used as a part',inputTo:'input to an AI step'}[i.rel]||i.rel)}</span>`:''}</li>`).join('')}</ul><p class="note">The label names the input but doesn't contain it.</p>`:''}
+    <p class="note">Read from the label inside the file. The signature isn't checked here; to verify it, use <a href="https://contentcredentials.org/verify" target="_blank" rel="noopener">contentcredentials.org/verify</a>.</p></section>`;
+}
+function metaSections(f,underRecipe){
+  const M=f.meta||{}; const parts=[];
+  if(M.c2pa) parts.push(c2paSection(M.c2pa));
+  if(M.aigc){const a=M.aigc; const rows=[];
+    if(a.Label!=null) rows.push(['Label',esc(AIGC_LABEL[String(a.Label)]||a.Label)]);
+    if(a.ContentProducer) rows.push(['Made by',esc(a.ContentProducer)]); if(a.ProduceID) rows.push(['Content ID',esc(a.ProduceID)]);
+    if(a.ContentPropagator) rows.push(['Shared by',esc(a.ContentPropagator)]); if(a.PropagateID) rows.push(['Share ID',esc(a.PropagateID)]);
+    parts.push(`<section><h2>AI content label <span class="ct">AIGC · China GB 45438</span></h2>${kvTable(rows)}<p class="note">The hidden label Chinese AI services add under China's AI-content rules (RunningHub adds one to every clip). "Made by" and "Shared by" are the services' registration codes, not names.</p></section>`)}
+  if(M.capcut){const c=M.capcut, on=c.flags.filter(x=>x.on), off=c.flags.filter(x=>!x.on);
+    const rows=[['App',esc(/vicut/i.test(c.product)?'CapCut':c.product||'CapCut')]]; if(c.os||c.platform) rows.push(['Exported from',esc([c.platform,c.os==='mac'?'Mac':c.os].filter(Boolean).join(' · '))]); if(c.videoId) rows.push(['Project ID',esc(c.videoId)]);
+    rows.push(['AI features used',on.length?on.map(x=>`<span class="yes">${esc(x.label)}</span>`).join(', '):'None flagged']);
+    parts.push(`<section><h2>CapCut export</h2>${kvTable(rows)}${off.length?`<p class="note">Not used: ${off.map(x=>esc(x.label)).join(', ')}.</p>`:''}<p class="note">These flags only cover features used inside CapCut. A clip generated elsewhere and edited in CapCut shows its original AI tool as "not used".</p></section>`)}
+  if(M.xmpFields&&M.xmpFields.length) parts.push(`<section><h2>XMP <span class="ct">${M.xmpFields.length} field${M.xmpFields.length===1?'':'s'}</span></h2>${kvTable(M.xmpFields.map(x=>[x.k,longVal(x.v)]))}<div class="btns" style="margin-top:6px">${copyBtn(M.xmp,'Copy full XMP','XMP copied')}</div></section>`);
+  else if(M.xmp) parts.push(`<section><h2>XMP</h2><div class="btns">${copyBtn(M.xmp,'Copy full XMP','XMP copied')}</div></section>`);
+  if(M.other&&M.other.length) parts.push(`<section><h2>Other metadata <span class="ct">${M.other.length} tag${M.other.length===1?'':'s'}</span></h2>${kvTable(M.other.map(x=>[TAG_NAMES[x.k]||x.k,isBinary(x.k,x.v)?`<span class="n">binary data (${x.v.length.toLocaleString()} bytes)${x.k==='covr'?', cover picture':''}</span>`:longVal(x.v)]))}</section>`);
+  return parts.join('');
+}
+function infoSheet(f){
+  const M=f.meta, c=M.c2pa, g=M.gen, V=f.video||{}, T=f.tags||{};
+  const xf=k=>(M.xmpFields.find(x=>x.k===k)||{}).v;
+  const app=(c&&c.app)||(g&&g.app)||(M.capcut?'CapCut':'')||xf('xmp:CreatorTool')||T.Software||'—';
+  const company=(c&&c.company)||(M.aigc&&M.aigc.ContentProducer)||T.Artist||T.Author||'—';
+  const ai=c?(c.ai?'Yes (label)':'Not stated'):M.aigc?(AIGC_LABEL[String(M.aigc.Label)]||'Labelled'):M.capcut?(M.capcut.flags.some(x=>x.on)?'CapCut AI feature used':'Not flagged'):g?'Yes':'—';
+  const date=(c&&c.time)||V.created||T.DateTimeOriginal||T.DateTime||xf('xmp:CreateDate')||'—';
+  const cells=[['Source',app,'sm'],['Company',company,'sm'],['AI-made',ai,'sm'],['Date',date,'sm']];
+  if(V.width) cells.push(['Canvas',`${V.width}×${V.height}`]);
+  if(V.seconds) cells.push(['Length',`${V.frames?V.frames+' fr · ':''}${V.seconds.toFixed(2)} s`]);
+  const kind=c?'Content Credentials':g?g.app:M.capcut?'CapCut export':M.aigc?'AIGC label':'basic metadata';
+  const lead=g?'Prompt and settings read from the text the image tool saved inside the file.':c||M.aigc?'This file carries a label about where it came from, not a recipe: the prompt and settings aren’t stored in it.':M.capcut?'This file was exported from CapCut. Any label from the tool that generated the footage was dropped in the edit.':'No recipe or provenance label in this file, only basic information.';
+  let left='', right='';
+  if(g){left=`<section><h2>Prompt</h2>${g.prompt?`<pre class="prompt">${esc(g.prompt)}</pre><div class="btns" style="margin-top:6px">${copyBtn(g.prompt,'Copy prompt','Prompt copied')}</div>`:'<p class="empty">No prompt text found.</p>'}
+      ${g.negative?`<div class="psrc">Negative prompt</div><pre class="prompt">${esc(g.negative)}</pre><div class="btns" style="margin-top:6px">${copyBtn(g.negative,'Copy negative','Negative prompt copied')}</div>`:''}</section>`;
+    right=`<section><h2>Settings</h2>${g.settings.length?kvTable(g.settings.map(x=>[x.k,longVal(typeof x.v==='number'?fmt(x.v):x.v)])):'<p class="empty">None found.</p>'}</section>`;}
+  const meta=metaSections(f,false);
+  const body=g?`<div class="cols"><div class="col">${left}</div><div class="col">${right}</div></div>${meta?`<div class="extra">${meta}</div>`:''}`:`<div class="extra">${meta||'<p class="empty">Nothing else readable.</p>'}</div>`;
+  return `<article class="sheet">
+    <div class="filehead"><span class="name">${esc(f.name)}</span><span class="pill ${g?'ok':'ex'}">${esc(f.kind)} · ${esc(kind)}</span></div>
+    <div class="slate">${cells.map(x=>`<div class="cell"><div class="lbl">${x[0]}</div><div class="val ${x[2]||''}">${esc(String(x[1]))}</div></div>`).join('')}</div>
+    <p class="lead">${esc(lead)}</p>${body}</article>`;
 }
 async function copy(text,msg){
   try{await navigator.clipboard.writeText(text);toast(msg)}
